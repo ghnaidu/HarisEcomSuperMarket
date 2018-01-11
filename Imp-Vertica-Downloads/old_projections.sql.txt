@@ -1,0 +1,140 @@
+Quick tip: Clean out old projections
+BY NORBERT KRUPA · MARCH 19, 2015
+
+Spring officially starts tomorrow and it’s the perfect time to do some spring cleaning on old projections. This quick tip shows how to identify unused projections.
+
+Since additional projections take up storage, it’s beneficial to periodically check the usage on projections. The following query will return the 50 oldest projections based on usage:
+
+
+SELECT projection_basename, 
+       MAX(time) AS last_used 
+FROM   v_internal.dc_projections_used 
+WHERE  table_oid IN (SELECT table_id 
+                     FROM   v_catalog.tables 
+                     WHERE  NOT is_system_table) 
+GROUP  BY projection_basename 
+ORDER  BY last_used ASC 
+LIMIT  50;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT projection_basename, 
+       MAX(time) AS last_used 
+FROM   v_internal.dc_projections_used 
+WHERE  table_oid IN (SELECT table_id 
+                     FROM   v_catalog.tables 
+                     WHERE  NOT is_system_table) 
+GROUP  BY projection_basename 
+ORDER  BY last_used ASC 
+LIMIT  50;
+To see the size of the projection, this query will add data from storage_containers:
+
+
+SELECT p.table_schema, 
+       p.basename, 
+       MAX(pu.last_used)               AS last_used, 
+       SUM(sc.used_bytes) / 1024       AS used_kb, 
+       SUM(sc.used_bytes) / ( 1024^3 ) AS used_gb 
+FROM   (SELECT projection_oid, 
+               MAX(time) AS last_used 
+        FROM   v_internal.dc_projections_used 
+        WHERE  table_oid IN (SELECT table_id 
+                             FROM   v_catalog.tables 
+                             WHERE  NOT is_system_table) 
+        GROUP  BY projection_oid) pu 
+       JOIN (SELECT oid, 
+                    name, 
+                    basename, 
+                    "schema" AS table_schema 
+             FROM   v_internal.vs_projections) p 
+         ON p.oid = pu.projection_oid 
+       JOIN (SELECT projection_id, 
+                    used_bytes 
+             FROM   v_monitor.storage_containers) sc 
+         ON sc.projection_id = pu.projection_oid 
+GROUP  BY p.table_schema, 
+          p.basename 
+ORDER  BY last_used ASC 
+LIMIT  50;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+SELECT p.table_schema, 
+       p.basename, 
+       MAX(pu.last_used)               AS last_used, 
+       SUM(sc.used_bytes) / 1024       AS used_kb, 
+       SUM(sc.used_bytes) / ( 1024^3 ) AS used_gb 
+FROM   (SELECT projection_oid, 
+               MAX(time) AS last_used 
+        FROM   v_internal.dc_projections_used 
+        WHERE  table_oid IN (SELECT table_id 
+                             FROM   v_catalog.tables 
+                             WHERE  NOT is_system_table) 
+        GROUP  BY projection_oid) pu 
+       JOIN (SELECT oid, 
+                    name, 
+                    basename, 
+                    "schema" AS table_schema 
+             FROM   v_internal.vs_projections) p 
+         ON p.oid = pu.projection_oid 
+       JOIN (SELECT projection_id, 
+                    used_bytes 
+             FROM   v_monitor.storage_containers) sc 
+         ON sc.projection_id = pu.projection_oid 
+GROUP  BY p.table_schema, 
+          p.basename 
+ORDER  BY last_used ASC 
+LIMIT  50;
+As this information is kept in a data collector, check for the retention and increase if desired:
+
+
+SELECT node_name, 
+       first_time, 
+       memory_buffer_size_kb AS kb_in_memory, 
+       disk_size_kb          AS kb_on_disk 
+FROM   v_monitor.data_collector 
+WHERE  table_name = 'dc_projections_used' 
+ORDER  BY node_name;
+1
+2
+3
+4
+5
+6
+7
+SELECT node_name, 
+       first_time, 
+       memory_buffer_size_kb AS kb_in_memory, 
+       disk_size_kb          AS kb_on_disk 
+FROM   v_monitor.data_collector 
+WHERE  table_name = 'dc_projections_used' 
+ORDER  BY node_name;
